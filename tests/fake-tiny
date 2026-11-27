@@ -1,0 +1,47 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+function emit(array $e): void
+{
+    fwrite(STDOUT, json_encode(['time' => gmdate('Y-m-d\TH:i:s\Z')] + $e) . "\n");
+}
+
+pcntl_async_signals(true);
+pcntl_signal(SIGTERM, static function (): void {
+    emit(['event' => 'banner', 'message' => 'stopping']);
+    exit(0);
+});
+
+switch (getenv('FAKE_TINY')) {
+    case 'connected':
+        emit(['event' => 'reconnecting', 'error' => 'tuna: connection refused', 'retry_in' => 1.5]);
+        emit(['event' => 'connected', 'url' => 'https://fake.tuna.am']);
+        emit(['event' => 'banner', 'message' => json_encode([
+            'argv' => array_slice($GLOBALS['argv'], 1),
+            'key' => getenv('TUNA_API_KEY'),
+            'suffix' => getenv('TUNA_CLIENT_SUFFIX'),
+            'addr' => getenv('TUNA_ADDR'),
+            'subdomain' => getenv('TUNA_SUBDOMAIN'),
+        ])]);
+        break;
+    case 'error':
+        emit(['event' => 'reconnecting', 'error' => 'tuna: bad gateway', 'retry_in' => 1]);
+        emit(['event' => 'error', 'error' => 'tuna: invalid API key (request id req-1)']);
+        exit(1);
+    case 'terminated':
+        emit(['event' => 'connected', 'url' => 'tcp://fake.tuna.am:1234']);
+        emit(['event' => 'reconnecting', 'error' => 'tuna: keepalive timeout', 'retry_in' => 2]);
+        emit(['event' => 'reconnected', 'url' => 'tcp://fake.tuna.am:1235']);
+        echo "not json\n";
+        emit(['event' => 'terminated', 'reason' => 'deleted', 'message' => 'tunnel was deleted']);
+        exit(1);
+    case 'usage':
+        fwrite(STDERR, "flag provided but not defined: -x\n");
+        exit(2);
+}
+
+while (true) {
+    sleep(1);
+}
